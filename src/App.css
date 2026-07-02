@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 
 // PENTING: Masukkan API Key Gemini Anda di antara tanda kutip di bawah ini!
-const apiKey = "MASUKKAN_API_KEY_GEMINI_ANDA_DI_SINI"; 
+const apiKey = "AQ.Ab8RN6L6XLekVpD3KZpHgzLGixJ9vQE7zys8QM9h1Q44p5IGIg"; 
 
 export default function App() {
   const [activeMenu, setActiveMenu] = useState('generate'); 
