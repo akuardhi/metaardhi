@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Upload, PenTool, Copy, Check, Loader2, 
   AlertCircle, FileText, Trash2, Wand2, ArrowRight, 
-  Download, TrendingUp, Settings, Sparkles
+  Download, TrendingUp, Settings, Sparkles, Film, Image as ImageIcon
 } from 'lucide-react';
 
 const envGemini = import.meta.env.VITE_GEMINI_API_KEY || '';
@@ -12,7 +12,7 @@ export default function App() {
   const [showApiSettings, setShowApiSettings] = useState(false);
   
   const [geminiKey, setGeminiKey] = useState(envGemini);
-  // API Key JSON2Video ditanam langsung agar tidak error lagi
+  // Kunci JSON2Video kamu sudah tertanam di sini
   const [json2VideoKey, setJson2VideoKey] = useState('2T9ShxBs8hebcrBFbYgj44eGg4FdeR8mJ9hbcTOQ');
 
   const [imagePrompt, setImagePrompt] = useState('');
@@ -49,141 +49,154 @@ export default function App() {
     };
   }, [previewUrl]);
 
+  // --- FUNGSI GENERATE (DENGAN PROPORSI KETAT AGAR TIDAK GEPENG) ---
   const handleGenerate = async () => {
-    if (generateType === 'video' && !json2VideoKey) {
-      setError("API Key JSON2Video hilang.");
-      setShowApiSettings(true); return;
-    }
-    if (!imagePrompt.trim()) { setError("Prompt tidak boleh kosong."); return; }
+    if (generateType === 'video' && !json2VideoKey) { setError("API Key JSON2Video hilang."); return; }
+    if (!imagePrompt.trim()) { setError("Prompt kosong."); return; }
     
     setIsGeneratingImage(true); setError(''); setGeneratedMediaUrl(null);
-    setResultMediaType(generateType); setVideoStatus('Menyelaraskan piksel visual...');
+    setResultMediaType(generateType); setVideoStatus('Menyiapkan kanvas...');
     
     let w = 1920, h = 1080;
-    let arInstruction = ", wide landscape perspective";
-    if (aspectRatio === '1:1') { w = 1024; h = 1024; arInstruction = ", perfect square aspect ratio"; }
-    if (aspectRatio === '9:16') { w = 1080; h = 1920; arInstruction = ", vertical portrait aspect ratio"; }
+    if (aspectRatio === '1:1') { w = 1024; h = 1024; }
+    if (aspectRatio === '9:16') { w = 1080; h = 1920; }
     
-    let hiddenInstructions = `${arInstruction}, sharp focus, highly detailed, 8k resolution, photorealistic, cinematic composition, adobe stock photography`;
-    if (generateType === 'vector') hiddenInstructions = `${arInstruction}, flat vector illustration style, clean digital art, sharp edges, solid colors, adobe illustrator style, professional stock illustration`;
+    const hiddenInstructions = generateType === 'vector' 
+      ? ", flat vector illustration style, clean lines, professional stock illustration" 
+      : ", 8k resolution, photorealistic, cinematic composition, adobe stock photography";
 
     const encodedPrompt = encodeURIComponent(imagePrompt + hiddenInstructions);
-    const randomSeed = Math.floor(Math.random() * 100000);
-    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?seed=${randomSeed}&width=${w}&height=${h}&model=flux&nologo=true`;
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?seed=${Math.floor(Math.random()*10000)}&width=${w}&height=${h}&model=flux&nologo=true`;
     
     if (generateType !== 'video') {
       const img = new Image();
       img.onload = () => { setGeneratedMediaUrl(imageUrl); setIsGeneratingImage(false); };
-      img.onerror = () => { setError("Gagal merender aset."); setIsGeneratingImage(false); };
+      img.onerror = () => { setError("Gagal merender gambar."); setIsGeneratingImage(false); };
       img.src = imageUrl; return;
     }
 
     try {
-      setVideoStatus('Menghubungkan ke server Video...');
-      
-      // Payload JSON2Video yang diperbaiki dan disederhanakan
+      setVideoStatus('Menghubungkan JSON2Video...');
       const req = await fetch('https://api.json2video.com/v2/movies', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          'x-api-key': json2VideoKey 
-        },
+        headers: { 'Content-Type': 'application/json', 'x-api-key': json2VideoKey },
         body: JSON.stringify({
-          scenes: [
-            {
-              duration: 8,
-              elements: [
-                {
-                  type: "image",
-                  src: imageUrl
-                }
-              ]
-            }
-          ]
+          resolution: "1080p",
+          scenes: [{ duration: 8, elements: [{ type: "image", src: imageUrl }] }]
         })
       });
-      
       const res = await req.json();
-      if (!res.project) throw new Error(res.message || "Koneksi server terputus atau API Key salah.");
-
-      const projectId = res.project;
+      if (!res.project) throw new Error("Server video menolak API Key.");
+      
       const checkStatus = async () => {
-        setVideoStatus('Rendering MP4 (Mohon tunggu 15-30 detik)...');
+        setVideoStatus('Merender video MP4 (Estimasi 15-30 detik)...');
         try {
-          const statusReq = await fetch(`https://api.json2video.com/v2/movies?project=${projectId}`, { 
-            method: 'GET', 
-            headers: { 'x-api-key': json2VideoKey } 
-          });
-          const statusRes = await statusReq.json();
-          if (statusRes.movie && statusRes.movie.status === 'done') {
-            setGeneratedMediaUrl(statusRes.movie.url); setIsGeneratingImage(false);
-          } else if (statusRes.movie && statusRes.movie.status === 'error') {
-            setError("Gagal merender video di server. Coba prompt yang lebih sederhana."); setIsGeneratingImage(false);
-          } else { setTimeout(checkStatus, 4000); }
-        } catch (err) { setError("Koneksi terputus."); setIsGeneratingImage(false); }
+            const statusReq = await fetch(`https://api.json2video.com/v2/movies?project=${res.project}`, { headers: { 'x-api-key': json2VideoKey } });
+            const statusRes = await statusReq.json();
+            if (statusRes.movie?.status === 'done') { setGeneratedMediaUrl(statusRes.movie.url); setIsGeneratingImage(false); }
+            else if (statusRes.movie?.status === 'error') { setError("Rendering video gagal."); setIsGeneratingImage(false); }
+            else { setTimeout(checkStatus, 5000); }
+        } catch (err) {
+             setError("Koneksi terputus saat mengecek status video.");
+             setIsGeneratingImage(false);
+        }
       };
-      setTimeout(checkStatus, 5000);
+      checkStatus();
     } catch (err) { setError(err.message); setIsGeneratingImage(false); }
   };
 
+  // --- FUNGSI DOWNLOAD (ANTI-GEPENG) ---
   const handleDownloadImage = async () => {
     if (!generatedMediaUrl) return;
     setIsDownloading(true);
-    try {
-      if (resultMediaType === 'video') {
-        const response = await fetch(generatedMediaUrl);
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a'); link.href = url;
-        link.download = `Stock_Video_${Math.floor(Date.now() / 1000)}.mp4`;
-        document.body.appendChild(link); link.click(); document.body.removeChild(link);
-        setIsDownloading(false);
-      } else {
-        const img = new Image(); img.crossOrigin = "Anonymous"; 
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = downloadRes; canvas.height = downloadRes;
-          const ctx = canvas.getContext('2d');
-          ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, 0, 0, downloadRes, downloadRes);
-          let labelRes = downloadRes === 2048 ? "2K" : downloadRes === 4096 ? "4K" : downloadRes === 8192 ? "8K" : "1080p";
-          const link = document.createElement('a');
-          link.download = `Stock_${resultMediaType === 'vector' ? 'Vector' : 'Photo'}_${labelRes}_${Math.floor(Date.now()/1000)}.jpg`;
-          link.href = canvas.toDataURL('image/jpeg', 0.95); link.click();
-          setIsDownloading(false);
-        };
-        img.onerror = () => { setError("Gagal upscale gambar."); setIsDownloading(false); };
-        img.src = generatedMediaUrl;
-      }
-    } catch (err) { setError("Gagal mengunduh."); setIsDownloading(false); }
+    
+    if (resultMediaType === 'video') {
+        try {
+            const response = await fetch(generatedMediaUrl);
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a'); link.href = url;
+            link.download = `Stock_Video_${Math.floor(Date.now() / 1000)}.mp4`;
+            document.body.appendChild(link); link.click(); document.body.removeChild(link);
+            setIsDownloading(false);
+            return;
+        } catch(err) {
+             setError("Gagal mengunduh file video.");
+             setIsDownloading(false);
+             return;
+        }
+    }
+    
+    let w = downloadRes;
+    let h = (aspectRatio === '16:9') ? Math.round(downloadRes * (9/16)) : (aspectRatio === '9:16') ? Math.round(downloadRes * (16/9)) : downloadRes;
+    
+    const img = new Image();
+    img.crossOrigin = "Anonymous"; 
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, w, h);
+      const link = document.createElement('a');
+      link.download = `MetaArdhi_${Math.floor(Date.now()/1000)}.jpg`;
+      link.href = canvas.toDataURL('image/jpeg', 0.95);
+      link.click();
+      setIsDownloading(false);
+    };
+    img.onerror = () => { setError("Gagal memproses gambar."); setIsDownloading(false); }
+    img.src = generatedMediaUrl;
   };
 
   const useGeneratedImageForMetadata = async () => {
-    if (resultMediaType === 'video') { setError("Video harus diunggah manual ke Metadata Studio."); return; }
-    setIsGeneratingImage(true);
     try {
+      if (resultMediaType === 'video') {
+        setError("Transfer otomatis hanya untuk format gambar. Unduh video dan unggah manual.");
+        return;
+      }
+      setIsGeneratingImage(true);
       const response = await fetch(generatedMediaUrl);
       const blob = await response.blob();
       const reader = new FileReader();
       reader.onloadend = () => {
-        setBase64Data(reader.result.split(',')[1]); setMimeType(blob.type);
-        setPreviewUrl(generatedMediaUrl); setMediaType(resultMediaType === 'vector' ? 'ilustrasi' : 'gambar');
-        setDescription(imagePrompt); setActiveMenu('metadata'); setIsGeneratingImage(false);
+        setBase64Data(reader.result.split(',')[1]);
+        setMimeType(blob.type);
+        setPreviewUrl(generatedMediaUrl);
+        setMediaType(resultMediaType === 'vector' ? 'ilustrasi' : 'gambar');
+        setDescription(imagePrompt); 
+        setActiveMenu('metadata'); 
+        setIsGeneratingImage(false);
       };
       reader.readAsDataURL(blob);
-    } catch (err) { setError("Gagal transfer ke metadata."); setIsGeneratingImage(false); }
+    } catch (err) {
+      setError("Gagal mentransfer ke modul metadata.");
+      setIsGeneratingImage(false);
+    }
   };
 
   const fetchTrendingIdeas = async () => { 
-    if (!geminiKey) { setError("API Key Gemini belum diatur."); setShowApiSettings(true); return; }
+    if (!geminiKey) { 
+      setError("API Key Gemini belum terdeteksi. Silakan masukkan di menu Pengaturan API."); 
+      setShowApiSettings(true);
+      return; 
+    }
     setIsLoadingTrending(true); setError(''); setTrendingIdeas('');
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
-      const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: "Berikan daftar singkat tapi mendetail tentang konten visual yang sangat laku di Adobe Stock hari ini. Format dengan gaya modern profesional." }] }] }) });
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: "Berikan daftar profesional konten paling trending di Adobe Stock (Foto, Video, Vektor) hari ini. Gunakan format profesional." }] }] })
+      });
       const data = await response.json();
       if(data.error) throw new Error(data.error.message);
-      setTrendingIdeas(data.candidates?.[0]?.content?.parts?.[0]?.text || "Gagal memuat tren.");
-    } catch (err) { setError("Gagal menarik data pasar."); } finally { setIsLoadingTrending(false); }
+      setTrendingIdeas(data.candidates?.[0]?.content?.parts?.[0]?.text || "Data tren tidak tersedia.");
+    } catch (err) { 
+      setError("Gagal memuat data tren pasar. Pastikan API Key Gemini valid."); 
+    } finally { 
+      setIsLoadingTrending(false); 
+    }
   };
 
   const handleFileChange = (e) => { 
@@ -194,16 +207,21 @@ export default function App() {
     reader.onloadend = () => setBase64Data(reader.result.split(',')[1]);
     reader.readAsDataURL(selectedFile);
   };
+  
   const clearFile = () => { setFile(null); setPreviewUrl(null); setBase64Data(null); setMimeType(null); if (fileInputRef.current) fileInputRef.current.value = ''; };
 
   const generateMetadata = async () => { 
-    if (!geminiKey) { setError("API Key Gemini belum diatur."); setShowApiSettings(true); return; }
-    if (!base64Data && !description.trim()) { setError("Unggah media atau berikan deskripsi."); return; }
+    if (!geminiKey) {
+      setError("API Key Gemini belum terdeteksi. Silakan masukkan di menu Pengaturan API.");
+      setShowApiSettings(true);
+      return;
+    }
+    if (!base64Data && !description.trim()) { setError("Unggah file atau masukkan deskripsi konteks."); return; }
     
     setLoadingMetadata(true); setError(''); setMetadata(null);
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
-      const prompt = `Act as an elite Adobe Stock SEO expert. Generate high-conversion metadata for this ${mediaType}. Context: ${description}. Requirements: 1. English. 2. Title: Max 70 chars, catchy. 3. Keywords: 50 highly relevant words, comma-separated. 4. Category: Official Adobe Stock category.`;
+      const prompt = `Act as a professional Adobe Stock contributor. Generate commercial metadata for this ${mediaType}. Context: ${description}. Output strict JSON. Requirements: 1. English. 2. Title: Max 70 chars. 3. Keywords: 50 words, comma-separated. 4. Category: Choose one official Adobe Stock category.`;
       const parts = [{ text: prompt }];
       if (base64Data) parts.push({ inlineData: { mimeType: mimeType || "image/jpeg", data: base64Data } });
       const payload = { contents: [{ role: "user", parts: parts }], generationConfig: { responseMimeType: "application/json", responseSchema: { type: "OBJECT", properties: { title: { type: "STRING" }, keywords: { type: "ARRAY", items: { type: "STRING" } }, category: { type: "STRING" } }, required: ["title", "keywords", "category"] } } };
@@ -214,7 +232,11 @@ export default function App() {
       
       const parsedData = JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text);
       setMetadata({ title: parsedData.title, keywords: parsedData.keywords.join(', '), category: parsedData.category });
-    } catch (err) { setError("Gagal mengekstrak metadata. Cek API Key."); } finally { setLoadingMetadata(false); }
+    } catch (err) { 
+      setError("Gagal memproses metadata. Periksa kembali API Key Anda."); 
+    } finally { 
+      setLoadingMetadata(false); 
+    }
   };
 
   const copyToClipboard = (text, fieldName) => { navigator.clipboard.writeText(text); setCopiedField(fieldName); setTimeout(() => setCopiedField(null), 2000); };
@@ -224,11 +246,13 @@ export default function App() {
     const textContent = `--- METADATA EXPORT ---\n\nTITLE:\n${metadata.title}\n\nKEYWORDS:\n${metadata.keywords}\n\nCATEGORY:\n${metadata.category}\n\n-----------------------`;
     const blob = new Blob([textContent], { type: 'text/plain' });
     const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a'); link.href = url;
+    const link = document.createElement('a');
+    link.href = url;
     link.download = `Metadata_${Math.floor(Date.now() / 1000)}.txt`;
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
-
   return (
     <div style={{ fontFamily: "'Inter', system-ui, sans-serif" }} className="min-h-screen bg-gradient-to-br from-[#eff3f8] via-white to-[#e4e9f2] text-slate-800 p-4 md:p-8 selection:bg-indigo-200">
       <div className="max-w-6xl mx-auto space-y-8 animate-[fadeIn_0.5s_ease-out]">
